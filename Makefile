@@ -1,6 +1,6 @@
 BIN         := bolt
-TAPD_TAG    ?= v0.4.0-alpha
-LND_TAG     ?= v0.18.0-beta
+TAPD_TAG    ?= v0.7.2
+LND_TAG     ?= v0.20.1-beta
 PROTO_TMP   := .proto-tmp
 GOOGLEAPIS  := $(PROTO_TMP)/googleapis
 
@@ -11,6 +11,8 @@ SYMBOL      ?= USDL
 AMOUNT      ?= 1000000
 OPERATOR    ?= admin
 DEST        ?= ""
+BOLT_DB_URL ?= postgresql://root@localhost:26257/bolt?sslmode=disable
+N           ?= 1
 
 # --- Build ---
 
@@ -161,6 +163,36 @@ proto-check:
 	@which protoc-gen-go >/dev/null 2>&1 || go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
 	@which protoc-gen-go-grpc >/dev/null 2>&1 || go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
 
+# --- Demo (local regtest stack) ---
+
+# Bring up the full demo stack: services → fund LND → open channel → mint genesis assets
+# Usage: make demo-start
+demo-start: up
+	@echo "waiting 15s for services to initialise..."
+	@sleep 15
+	@bash scripts/bootstrap.sh
+	@cockroach sql --insecure --host=localhost:26257 \
+	  -e "CREATE DATABASE IF NOT EXISTS bolt" 2>/dev/null || true
+	@goose -dir db/migrations postgres "$(BOLT_DB_URL)" up
+	@bash scripts/open-channel.sh
+	@bash scripts/init-assets.sh
+	@echo "demo ready — run: make health"
+
+# Tear down and wipe all volumes
+# Usage: make demo-reset
+demo-reset:
+	docker compose down -v
+
+# Mine N regtest blocks (requires demo stack running)
+# Usage: make mine N=5
+mine:
+	@bash scripts/mine.sh $(N)
+
+# Run integration tests (requires: make demo-start && make run in a separate terminal)
+# Usage: make test-integration
+test-integration:
+	go test -v -tags integration -timeout 120s ./integration/
+
 # --- Housekeeping ---
 
 clean:
@@ -170,4 +202,5 @@ clean:
 .PHONY: build run up down db-init migrate \
         health supply price weights transactions \
         mint mint-bolt burn redeem reserves rebalance \
-        proto-gen proto-check clean
+        proto-gen proto-check clean \
+        demo-start demo-reset mine test-integration
