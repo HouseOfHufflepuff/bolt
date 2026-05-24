@@ -1,0 +1,108 @@
+version: "3.8"
+
+services:
+  bitcoind:
+    image: lncm/bitcoind:v25.1
+    command:
+      - -regtest
+      - -rpcallowip=0.0.0.0/0
+      - -rpcbind=0.0.0.0
+      - -rpcuser=bitcoin
+      - -rpcpassword=bitcoin
+      - -zmqpubrawblock=tcp://0.0.0.0:28332
+      - -zmqpubrawtx=tcp://0.0.0.0:28333
+      - -txindex=1
+      - -fallbackfee=0.0002
+    volumes:
+      - bitcoind_data:/data/.bitcoin
+    ports:
+      - "18443:18443"
+      - "28332:28332"
+      - "28333:28333"
+    healthcheck:
+      test: ["CMD-SHELL", "bitcoin-cli -regtest -rpcuser=bitcoin -rpcpassword=bitcoin getblockchaininfo"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+    restart: unless-stopped
+
+  lnd:
+    image: lightninglabs/lnd:v0.18.0-beta
+    command:
+      - --bitcoin.active
+      - --bitcoin.regtest
+      - --bitcoin.node=bitcoind
+      - --bitcoind.rpchost=bitcoind:18443
+      - --bitcoind.rpcuser=bitcoin
+      - --bitcoind.rpcpass=bitcoin
+      - --bitcoind.zmqpubrawblock=tcp://bitcoind:28332
+      - --bitcoind.zmqpubrawtx=tcp://bitcoind:28333
+      - --rpclisten=0.0.0.0:10009
+      - --restlisten=0.0.0.0:8080
+      - --noseedbackup
+      - --accept-keysend
+      - --debuglevel=info
+    volumes:
+      - lnd_data:/root/.lnd
+    ports:
+      - "10009:10009"
+      - "8180:8080"
+    depends_on:
+      bitcoind:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "lncli --network=regtest getinfo 2>/dev/null | grep -c identity_pubkey"]
+      interval: 10s
+      timeout: 10s
+      retries: 30
+      start_period: 30s
+    restart: unless-stopped
+
+  tapd:
+    image: lightninglabs/taproot-assets:v0.4.0-alpha
+    command:
+      - --network=regtest
+      - --lnd.host=lnd:10009
+      - --lnd.macaroonpath=/root/.lnd/data/chain/bitcoin/regtest/admin.macaroon
+      - --lnd.tlspath=/root/.lnd/tls.cert
+      - --rpclisten=0.0.0.0:10029
+      - --restlisten=0.0.0.0:8089
+      - --debuglevel=info
+    volumes:
+      - lnd_data:/root/.lnd:ro
+      - tapd_data:/root/.tapd
+    ports:
+      - "10029:10029"
+      - "8089:8089"
+    depends_on:
+      lnd:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "tapcli --network=regtest getinfo 2>/dev/null | grep -c version"]
+      interval: 10s
+      timeout: 10s
+      retries: 20
+      start_period: 20s
+    restart: unless-stopped
+
+  cockroachdb:
+    image: cockroachdb/cockroach:v23.2.5
+    command: start-single-node --insecure --listen-addr=0.0.0.0:26257 --http-addr=0.0.0.0:8081
+    volumes:
+      - cockroach_data:/cockroach/cockroach-data
+    ports:
+      - "26257:26257"
+      - "8081:8081"
+    healthcheck:
+      test: ["CMD", "cockroach", "sql", "--insecure", "-e", "SELECT 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+volumes:
+  bitcoind_data:
+  lnd_data:
+  tapd_data:
+  cockroach_data:
