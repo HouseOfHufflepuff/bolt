@@ -6,6 +6,27 @@ Bolt is an asset issuance and management platform built on the Bitcoin Lightning
 
 ---
 
+## Language: Go
+
+**Go is the correct language for this project — no real debate.**
+
+The entire Lightning + Taproot stack is written in Go:
+
+| Dependency | Language |
+|---|---|
+| `lnd` (Lightning Network Daemon) | Go |
+| `tapd` (Taproot Assets Daemon) | Go |
+| `btcd` (Bitcoin library) | Go |
+| gRPC client stubs (LND + tapd) | Go-native codegen |
+
+Choosing Go means you consume these libraries directly, compile against the same gRPC protobuf definitions, and write idiomatic integrations rather than crossing an FFI or HTTP boundary just to talk to your own node. The alternative (Node, Python, Rust) all require either a REST sidecar or painful FFI — Go does not.
+
+Go also gives you: goroutines for concurrent payment handling, strong typing for satoshi/msat arithmetic (no float bugs), and a single statically-linked binary that deploys cleanly inside Docker alongside `tapd` and `lnd`.
+
+**Frontend:** Next.js (React + TypeScript) for the admin dashboard and user wallet. No debate here either — this is a web UI, and the Go API serves it over REST/gRPC-web.
+
+---
+
 ## Why Lightning + Taproot Assets?
 
 - **Taproot Assets** allows asset issuance directly on Bitcoin, with transfers routed through existing Lightning channels.
